@@ -1,0 +1,79 @@
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+const dotenv = require('dotenv');
+dotenv.config();
+
+const connectDB = require('./config/db');
+const authRoutes    = require('./routes/auth');
+const studentRoutes = require('./routes/students');
+const attendanceRoutes = require('./routes/attendance');
+const gradeRoutes   = require('./routes/grades');
+const scmRoutes     = require('./routes/scm');
+const alertRoutes   = require('./routes/alerts');
+const careerRoutes  = require('./routes/career');
+const aiRoutes      = require('./routes/ai');
+const clusterRoutes = require('./routes/cluster');
+
+connectDB();
+
+const app    = express();
+const server = http.createServer(app);
+
+// ── Socket.io ─────────────────────────────────────────
+const io = new Server(server, { cors: { origin: '*', methods: ['GET','POST'] } });
+
+// ── Middlewares ───────────────────────────────────────
+app.use(cors({ origin: '*', credentials: false }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// ── Health ────────────────────────────────────────────
+app.get('/health', (req, res) =>
+  res.json({ status: 'ok', service: 'EduPulse Backend', version: '2.0.0', timestamp: new Date() })
+);
+
+// ── API Routes ────────────────────────────────────────
+app.use('/api/auth',       authRoutes);
+app.use('/api/students',   studentRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/grades',     gradeRoutes);
+app.use('/api/scm',        scmRoutes);
+app.use('/api/alerts',     alertRoutes);
+app.use('/api/career',     careerRoutes);
+app.use('/api/ai',         aiRoutes);
+app.use('/api/cluster',    clusterRoutes);   // ← K-Means
+
+// ── Socket.io ─────────────────────────────────────────
+io.on('connection', socket => {
+  console.log(`🔌 Client connected: ${socket.id}`);
+  socket.on('join_room',         userId      => socket.join(userId));
+  socket.on('attendance_update', data        => io.emit('attendance_updated', data));
+  socket.on('alert_sent',        data        => {
+    io.to(data.parentId).emit('new_alert', data);
+    io.to(data.scmId).emit('alert_notification', data);
+  });
+  socket.on('cluster_updated',   data        => io.emit('cluster_refresh', data));
+  socket.on('disconnect',        ()          => console.log(`🔌 Disconnected: ${socket.id}`));
+});
+
+// ── Error handler ─────────────────────────────────────
+app.use((err, req, res, next) => {
+  console.error('❌ Error:', err.message);
+  res.status(err.status || 500).json({ message: err.message || 'Server Error' });
+});
+
+// ── Start ─────────────────────────────────────────────
+const PORT = process.env.PORT || 8000;
+server.listen(PORT, () => {
+  console.log(`\n🚀 EduPulse Backend running on port ${PORT}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`\n✅ API Ready at http://localhost:${PORT}/api`);
+  console.log(`🤖 K-Means: POST http://localhost:${PORT}/api/cluster/run`);
+  console.log(`🏥 Health:  http://localhost:${PORT}/health\n`);
+});
+
+module.exports = { app, io };
+
+
