@@ -316,13 +316,15 @@ export default function SCMDashboard() {
           scmName: user?.name || 'Prof. Ananya Sharma' })
       });
       const data = await res.json();
-      const ts = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-      setAlertSentMap(prev => ({ ...prev, [student._id]: ts }));
-      setAlertSuccess(data.success ? `📧 Alert sent to ${student.name}'s parent! (${ts})` : `⚠️ ${data.message}`);
-    } catch {
-      const ts = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-      setAlertSentMap(prev => ({ ...prev, [student._id]: ts }));
-      setAlertSuccess(`✅ Alert sent to ${student.name}'s parent successfully!`);
+      if (data.success) {
+        const ts = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        setAlertSentMap(prev => ({ ...prev, [student._id]: ts }));
+        setAlertSuccess(`📧 Alert sent to ${student.name}'s parent! (${ts})`);
+      } else {
+        setAlertSuccess(`⚠️ Alert failed: ${data.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      setAlertSuccess(`⚠️ Failed to send alert to ${student.name}'s parent. Is the backend running?`);
     } finally {
       setTimeout(() => setAlertSuccess(''), 6000);
       setAlertSending(null);
