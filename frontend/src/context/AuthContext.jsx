@@ -1,6 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
-const API_BASE = '/api';
+// Dev: /api proxied by Vite → localhost:8000
+// Prod: VITE_API_URL must be set to https://your-backend.onrender.com
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/api`
+  : '/api';
+
 
 const AuthContext = createContext(null);
 
