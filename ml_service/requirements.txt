@@ -1,3 +1,25 @@
-Flask==3.0.0
+# EduPulse ML Service — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core ML
+opencv-python==4.8.0.76
+deepface==0.0.79
 scikit-learn==1.3.2
-numpy==1.26.2
+pandas==2.1.1
+numpy==1.24.4
+
+# Web framework
+flask==3.0.0
+flask-cors==4.0.0
+
+# HTTP / utilities
+requests==2.31.0
+Pillow==10.1.0
+
+# Deep Learning backend for DeepFace (choose one — TensorFlow is default)
+tensorflow==2.13.0
+# OR for lighter install:
+# torch==2.0.1
+
+# Optional: for faster inference
+# onnxruntime==1.16.0

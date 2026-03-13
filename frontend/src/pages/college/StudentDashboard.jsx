@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { DEMO_STUDENTS } from '../../data/demoData';
+import { useTheme } from '../../context/ThemeContext';
 import { Doughnut, Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale,
@@ -10,15 +10,22 @@ import {
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, Filler);
 
+const NAV_TABS = [
+  { label: 'Overview',      path: '/student' },
+  { label: 'Academics',     path: '/student/grades' },
+  { label: 'Intelligence',  path: '/student/progress' },
+  { label: 'Network',       path: '/student/peers' },
+];
+
 const QUICK_ACTIONS = [
-  { icon: '⌘', label: 'Academic Grades', path: '/student/grades', color: '#38bdf8' },
-  { icon: '⏱', label: 'Attendance Log', path: '/student/attendance', color: '#10b981' },
-  { icon: '⚲', label: 'Career Trajectory', path: '/student/career', color: '#c084fc' },
-  { icon: '✧', label: 'AI Counselor', path: '/student/sparky', color: '#fb7185' },
-  { icon: '★', label: 'Milestones', path: '/student/achievements', color: '#fbbf24' },
-  { icon: '◱', label: 'Performance Analytics', path: '/student/progress', color: '#2dd4bf' },
-  { icon: '▤', label: 'Study Planner', path: '/student/grades', color: '#f87171' },
-  { icon: '⑆', label: 'Peer Network', path: '/student', color: '#fb923c' }
+  { icon: '⌘', label: 'Academic Grades',       path: '/student/grades',       color: '#38bdf8' },
+  { icon: '⏱', label: 'Attendance Log',         path: '/student/attendance',   color: '#10b981' },
+  { icon: '⚲', label: 'Career Trajectory',      path: '/student/career',       color: '#c084fc' },
+  { icon: '✧', label: 'AI Counselor',           path: '/student/sparky',       color: '#fb7185' },
+  { icon: '★', label: 'Milestones',             path: '/student/achievements', color: '#fbbf24' },
+  { icon: '◱', label: 'Performance Analytics',  path: '/student/progress',     color: '#2dd4bf' },
+  { icon: '▤', label: 'Study Planner',          path: '/student/planner',      color: '#f87171' },
+  { icon: '⑆', label: 'Peer Network',           path: '/student/peers',        color: '#fb923c' },
 ];
 
 const MOODS = [
@@ -58,21 +65,32 @@ function HealthMeter({ score }) {
 
 export default function StudentDashboard() {
   const { user, logout } = useAuth();
+  const { isDark, toggle } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
   const [moodLogged, setMoodLogged] = useState(false);
+  const [studentData, setStudentData] = useState(null);
 
-  // Load demo data directly based on logged-in student
-  const student = DEMO_STUDENTS[user?.studentId] || DEMO_STUDENTS['stu_aarav'];
-  const grades = student.grades || { semesterSummary: [] };
-  const attendanceSummary = student.attendance || { overall: 0, summary: [] };
-  const insight = student.careerInsight || '';
+  // Load real student data from backend on mount
+  useEffect(() => {
+    const token = localStorage.getItem('ep_token') || sessionStorage.getItem('ep_token');
+    if (!token) return;
+    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (d.studentData) setStudentData(d.studentData); })
+      .catch(() => {});
+  }, []);
 
-  const logMood = (moodVal) => { setMoodLogged(true); };
+  // Use backend data if available, else fall back to user object
+  const student = studentData || user?.studentData || {};
+  const grades = { semesterSummary: [] };
+  const insight = '';
+  const logMood = () => setMoodLogged(true);
 
-  const cluster = student?.cluster || 'medium';
+  const cluster = student?.cluster || user?.cluster || 'medium';
   const cc = CLUSTER_CONFIG[cluster];
-  const healthScore = student?.academicHealthScore || 50;
-  const attendance = attendanceSummary?.overall ?? student?.attendancePercentage ?? 88;
+  const healthScore = student?.academicHealthScore || 60;
+  const attendance = student?.attendancePercentage || 80;
 
   const semData = {
     labels: (grades?.semesterSummary || []).map(s => `S${s.semester}`),
@@ -127,23 +145,32 @@ export default function StudentDashboard() {
             <span style={{ fontSize: '16px', fontWeight: 700, color: '#fff', letterSpacing: '-0.5px' }}>EduPulse</span>
           </Link>
           <div style={{ display: 'flex', gap: '4px' }}>
-            {['Overview', 'Academics', 'Intelligence', 'Network'].map((n, i) => (
-              <div key={i} style={{ color: i === 0 ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '13px', fontWeight: 500, padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', background: i === 0 ? 'rgba(255,255,255,0.05)' : 'transparent', transition: 'all 0.2s' }}>
-                {n}
-              </div>
-            ))}
+            {NAV_TABS.map((tab) => {
+              const isActive = location.pathname === tab.path || (tab.path !== '/student' && location.pathname.startsWith(tab.path));
+              return (
+                <button key={tab.label} onClick={() => navigate(tab.path)}
+                  style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '13px', fontWeight: 600, padding: '6px 14px', borderRadius: '6px', cursor: 'pointer', background: isActive ? 'rgba(255,255,255,0.08)' : 'transparent', border: 'none', transition: 'all 0.2s', fontFamily: "'Inter',sans-serif" }}
+                  onMouseEnter={e => { if(!isActive) e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+                  onMouseLeave={e => { if(!isActive) { e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; e.currentTarget.style.background = 'transparent'; } }}>
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: '20px' }}>
-            <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.4)' }}>SYS. STATUS:</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <button onClick={toggle} title={isDark ? 'Light mode' : 'Dark mode'}
+            style={{ width: '34px', height: '34px', borderRadius: '50%', border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {isDark ? '☀️' : '🌙'}
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: '16px' }}>
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }}></span>
-            <span style={{ fontSize: '12px', fontWeight: 500, color: '#10b981' }}>OPTIMAL</span>
+            <span style={{ fontSize: '12px', fontWeight: 500, color: '#10b981' }}>ONLINE</span>
           </div>
           <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'transparent', border: 'none', cursor: 'pointer', color: '#fff' }}>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '13px', fontWeight: 500 }}>{user.name}</div>
-              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: "'Space Mono', monospace" }}>{student?.rollNumber || 'GUEST'}</div>
+              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', fontFamily: "'Space Mono', monospace" }}>{student?.rollNumber || user?.email?.split('@')[0]}</div>
             </div>
             <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', color: '#38bdf8' }}>
               {user.name?.charAt(0)}
@@ -278,12 +305,15 @@ export default function StudentDashboard() {
             </div>
 
             <div style={{ display: 'grid', gap: '8px' }}>
-              {(attendanceSummary?.summary || []).slice(0, 3).map((s, i) => (
+              {(student?.attendanceSummary || []).slice(0, 3).map((s, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '6px' }}>
                   <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)' }}>{s.subject}</span>
                   <span style={{ fontFamily: "'Space Mono', monospace", fontSize: '12px', color: s.percentage >= 85 ? '#10b981' : s.percentage >= 75 ? '#f59e0b' : '#ef4444' }}>{s.percentage}%</span>
                 </div>
               ))}
+              {(!student?.attendanceSummary || student.attendanceSummary.length === 0) && (
+                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.25)', textAlign: 'center', padding: '12px', letterSpacing: '1px' }}>AWAITING SUBJECT DATA</div>
+              )}
             </div>
           </div>
 

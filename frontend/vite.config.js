@@ -18,6 +18,11 @@ export default defineConfig({
         target: 'http://localhost:8000',
         ws: true,
         changeOrigin: true
+      },
+      '/ml': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ml/, ''),
       }
     }
   }

@@ -4,46 +4,76 @@ const { protect } = require('../middleware/auth');
 const geminiService = require('../services/geminiService');
 const Student = require('../models/Student');
 const Grade = require('../models/Grade');
-const Attendance = require('../models/Attendance');
 const Mood = require('../models/Mood');
 
-// ── DEMO ENDPOINT (no auth) ────────────────────────────
+// ════════════════════════════════════════════════════
+// DEMO ENDPOINTS (no auth required — for Hawkathon demo)
+// ════════════════════════════════════════════════════
+
 // POST /api/ai/demo-chat
-// Sparky chat for demo — passes student context to Gemini, gets real response.
+// Sparky AI chat powered by Gemini. No JWT required.
 router.post('/demo-chat', async (req, res) => {
   try {
-    const { message, studentName, semester, cluster, attendancePercentage, moodToday, chatHistory } = req.body;
+    const {
+      message,
+      studentName = 'Student',
+      semester = 3,
+      cluster = 'medium',
+      attendancePercentage = 75,
+      moodToday = 3,
+      chatHistory = [],
+    } = req.body;
+
+    if (!message) return res.status(400).json({ message: 'message is required' });
+
     const response = await geminiService.sparkyChatResponse({
       message,
-      studentName: studentName || 'Student',
-      semester: semester || 3,
-      cluster: cluster || 'medium',
-      attendancePercentage: attendancePercentage || 75,
-      moodToday: moodToday || 3,
-      chatHistory: chatHistory || []
+      studentName,
+      semester,
+      cluster,
+      attendancePercentage,
+      moodToday,
+      chatHistory,
     });
-    res.json({ response });
+
+    res.json({ response, source: 'gemini' });
   } catch (err) {
-    console.error('Demo chat error:', err.message);
-    // Fallback so chat never breaks
+    console.error('demo-chat error:', err.message);
     const fallbacks = [
       "Hey there! 😊 I'm Sparky, your AI buddy! Keep pushing — every day counts! 🚀",
       "Great question! 🤖 You've got this — stay consistent and the results will follow! 💪",
-      "Hi! 🌟 Remember: progress, not perfection. You're doing better than you think! 🎯"
+      "Hi! 🌟 Remember: progress, not perfection. You're doing better than you think! 🎯",
     ];
-    res.json({ response: fallbacks[Math.floor(Math.random() * fallbacks.length)], fallback: true });
+    res.json({ response: fallbacks[Math.floor(Math.random() * fallbacks.length)], source: 'fallback' });
   }
 });
 
+// POST /api/ai/demo-career
+// Generate 3 Gemini career paths. No JWT required.
+router.post('/demo-career', async (req, res) => {
+  try {
+    const { student, grades = [], interests = [] } = req.body;
+    if (!student) return res.status(400).json({ message: 'student data required' });
 
+    const paths = await geminiService.generateCareerRoadmap({ student, grades, interests });
+    res.json({ paths, generatedAt: new Date(), source: 'gemini' });
+  } catch (err) {
+    console.error('demo-career error:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+});
 
-// POST /api/ai/chat — Sparky conversation
+// ════════════════════════════════════════════════════
+// PROTECTED ENDPOINTS (require JWT)
+// ════════════════════════════════════════════════════
+
+// POST /api/ai/chat — Sparky chat (authenticated)
 router.post('/chat', protect, async (req, res) => {
   try {
     const { message, studentId, chatHistory } = req.body;
     const student = await Student.findById(studentId);
     if (!student) return res.status(404).json({ message: 'Student not found' });
-    
+
     const response = await geminiService.sparkyChatResponse({
       message,
       studentName: student.name,
@@ -51,25 +81,22 @@ router.post('/chat', protect, async (req, res) => {
       cluster: student.cluster,
       attendancePercentage: student.attendancePercentage,
       moodToday: student.moodToday,
-      chatHistory
+      chatHistory,
     });
-    
-    // Award XP for engaging with Sparky
+
     await Student.findByIdAndUpdate(studentId, { $inc: { xpPoints: 2 } });
-    
     res.json({ response, studentContext: { name: student.name, cluster: student.cluster } });
-  } catch (error) {
-    // Fallback response if Gemini not configured
+  } catch (err) {
     const fallbacks = [
-      "Hey there! 😊 I'm Sparky, your AI buddy! To unlock my full powers, the admin needs to configure the Gemini API key. But I'm still here to cheer you on! 🚀",
-      "Great to see you! 🤖 I'm running in demo mode right now. Your academic journey looks amazing — keep pushing forward! 💪",
-      "Hi! 🌟 Sparky here! Once the Gemini API is set up, I can give you personalized advice. For now: You've got this! 🎯"
+      "Hey there! 😊 I'm Sparky! Keep pushing — every day counts! 🚀",
+      "Great to see you! 🤖 You've got this! 💪",
+      "Hi! 🌟 Sparky here! You're doing amazing — keep going! 🎯",
     ];
     res.json({ response: fallbacks[Math.floor(Math.random() * fallbacks.length)], demo: true });
   }
 });
 
-// POST /api/ai/career-roadmap
+// POST /api/ai/career-roadmap (authenticated)
 router.post('/career-roadmap', protect, async (req, res) => {
   try {
     const { studentId, interests } = req.body;
@@ -77,55 +104,55 @@ router.post('/career-roadmap', protect, async (req, res) => {
     const grades = await Grade.find({ studentId });
     const paths = await geminiService.generateCareerRoadmap({ student, grades, interests });
     res.json({ paths });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
-// POST /api/ai/parent-alert-content
+// POST /api/ai/parent-alert-content (authenticated)
 router.post('/parent-alert-content', protect, async (req, res) => {
   try {
     const content = await geminiService.generateParentAlert(req.body);
     res.json({ content });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
-// POST /api/ai/voice-command
+// POST /api/ai/voice-command (authenticated)
 router.post('/voice-command', protect, async (req, res) => {
   try {
     const { voiceText } = req.body;
     const result = await geminiService.parseVoiceCommand(voiceText);
     res.json(result);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
-// POST /api/ai/weekly-insight
+// POST /api/ai/weekly-insight (authenticated)
 router.post('/weekly-insight', protect, async (req, res) => {
   try {
     const { studentId } = req.body;
     const student = await Student.findById(studentId);
     const grades = await Grade.find({ studentId });
     const moods = await Mood.find({ studentId }).sort({ recordedAt: -1 }).limit(7);
-    
+
     const gradeAvg = grades.length ? Math.round(grades.reduce((a, g) => a + g.percentage, 0) / grades.length) : 0;
     const moodAvg = moods.length ? (moods.reduce((a, m) => a + m.mood, 0) / moods.length).toFixed(1) : 3;
-    
+
     const insight = await geminiService.generateWeeklyInsight({
       studentName: student.name,
       gradeAvg,
       attendancePercentage: student.attendancePercentage,
       streakDays: student.streakDays,
       moodAvg,
-      cluster: student.cluster
+      cluster: student.cluster,
     });
-    
+
     res.json({ insight });
-  } catch (error) {
-    res.json({ insight: "Keep up the great work this week! 🌟 Every step forward, no matter how small, brings you closer to your goals.", demo: true });
+  } catch {
+    res.json({ insight: 'Keep up the great work this week! 🌟 Every step forward brings you closer to your goals.', demo: true });
   }
 });
 

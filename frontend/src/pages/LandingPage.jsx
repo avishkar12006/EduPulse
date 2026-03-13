@@ -1,25 +1,45 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
-// ── Animated particle canvas background
+// ── Animated counter hook
+function useCounter(end, duration = 2000, trigger) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!trigger) return;
+    let start = 0;
+    const step = end / (duration / 16);
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= end) { setCount(end); clearInterval(timer); }
+      else setCount(Math.floor(start));
+    }, 16);
+    return () => clearInterval(timer);
+  }, [trigger, end, duration]);
+  return count;
+}
+
+// ── Particle canvas
 function ParticleCanvas() {
   const canvasRef = useRef(null);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+    let animId;
+    const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
     resize();
     window.addEventListener('resize', resize);
-    const particles = Array.from({ length: 80 }, () => ({
-      x: Math.random() * canvas.width, y: Math.random() * canvas.height,
-      r: Math.random() * 1.5 + 0.5,
-      vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4,
-      alpha: Math.random() * 0.4 + 0.1,
-      color: Math.random() > 0.5 ? '0,191,255' : '0,255,127'
+
+    const particles = Array.from({ length: 60 }, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 2 + 0.5,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: (Math.random() - 0.5) * 0.4,
+      color: `hsl(${Math.random() * 60 + 200}, 90%, 70%)`,
     }));
-    let animId;
-    const animate = () => {
+
+    const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       particles.forEach(p => {
         p.x += p.vx; p.y += p.vy;
@@ -27,378 +47,301 @@ function ParticleCanvas() {
         if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${p.color},${p.alpha})`;
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = 0.7;
         ctx.fill();
       });
-      // Draw connecting lines
-      particles.forEach((p, i) => particles.slice(i + 1).forEach(q => {
-        const d = Math.hypot(p.x - q.x, p.y - q.y);
-        if (d < 120) {
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y);
-          ctx.strokeStyle = `rgba(0,191,255,${0.08 * (1 - d / 120)})`;
-          ctx.lineWidth = 0.5;
-          ctx.stroke();
+      // Connect nearby particles
+      ctx.globalAlpha = 0.12;
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 100) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = '#00BFFF';
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+          }
         }
-      }));
-      animId = requestAnimationFrame(animate);
+      }
+      animId = requestAnimationFrame(draw);
     };
-    animate();
+    draw();
     return () => { cancelAnimationFrame(animId); window.removeEventListener('resize', resize); };
   }, []);
-  return <canvas ref={canvasRef} style={{ position: 'fixed', top: 0, left: 0, pointerEvents: 'none', zIndex: 0 }} />;
+  return <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />;
 }
 
-// ── Animated counter
-function AnimatedCounter({ target, suffix = '', duration = 2000 }) {
-  const [count, setCount] = useState(0);
-  const ref = useRef(null);
-  useEffect(() => {
-    const observer = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) {
-        let start = 0;
-        const step = target / (duration / 16);
-        const timer = setInterval(() => {
-          start += step;
-          if (start >= target) { setCount(target); clearInterval(timer); }
-          else setCount(Math.floor(start));
-        }, 16);
-      }
-    }, { threshold: 0.5 });
-    if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
-  }, [target, duration]);
-  return <span ref={ref}>{count.toLocaleString()}{suffix}</span>;
-}
-
-// ── Typewriter effect
-function Typewriter({ words, speed = 80, pause = 2000 }) {
-  const [text, setText] = useState('');
-  const [wordIdx, setWordIdx] = useState(0);
-  const [charIdx, setCharIdx] = useState(0);
-  const [deleting, setDeleting] = useState(false);
-  useEffect(() => {
-    const current = words[wordIdx];
-    const timeout = setTimeout(() => {
-      if (!deleting) {
-        setText(current.slice(0, charIdx + 1));
-        if (charIdx + 1 === current.length) setTimeout(() => setDeleting(true), pause);
-        else setCharIdx(c => c + 1);
-      } else {
-        setText(current.slice(0, charIdx - 1));
-        if (charIdx - 1 === 0) { setDeleting(false); setWordIdx(i => (i + 1) % words.length); setCharIdx(0); }
-        else setCharIdx(c => c - 1);
-      }
-    }, deleting ? speed / 2 : speed);
-    return () => clearTimeout(timeout);
-  }, [text, charIdx, deleting, wordIdx, words, speed, pause]);
-  return <span>{text}<span style={{ animation: 'blink 1s step-end infinite' }}>|</span></span>;
-}
-
-const STATS = [
-  { value: 250, suffix: 'M+', label: 'School Students in India', icon: '🎓' },
-  { value: 29, suffix: '%', label: 'College Dropout Rate', icon: '📉' },
-  { value: 5, suffix: '', label: 'AI-Powered Dashboards', icon: '🤖' },
-  { value: 4, suffix: '', label: 'UN SDGs Addressed', icon: '🌍' }
-];
-
-const PROBLEMS = [
-  { icon: '😰', title: 'Silent Failure', desc: 'Students fail across entire semesters with zero early detection until report cards reveal catastrophe.' },
-  { icon: '📭', title: 'Parents Fly Blind', desc: 'Parents only discover issues at report cards — weeks or months after early warning signs appeared.' },
-  { icon: '📊', title: 'Spreadsheet SCMs', desc: 'Student Counselors manage 200+ students manually with zero predictive power or intervention tools.' },
-  { icon: '📋', title: 'Generic Guidance', desc: 'One career brochure for everyone. Advice that ignores individual strengths, grades, and interests.' },
-  { icon: '🔀', title: 'Siloed Data', desc: 'Academic data lives in isolated systems. Nobody connects grades + attendance + mood into insights.' }
-];
-
-const FEATURES = [
-  { icon: '🧬', title: 'Academic DNA Profile', desc: 'Multi-dimensional analysis mapping each student\'s unique learning fingerprint — far beyond raw marks.', color: '#38bdf8' },
-  { icon: '🤖', title: 'K-Means Clustering', desc: 'ML algorithm auto-segments students into Top / Medium / Below clusters every week — no manual sorting.', color: '#a78bfa' },
-  { icon: '⚡', title: 'SCM Voice Dashboard', desc: 'Speak to get insights: "Show critical students" — AI executes instantly, hands-free command center.', color: '#fbbf24' },
-  { icon: '📧', title: 'Real Parent Alerts', desc: 'Personalized email sent directly to parent\'s inbox when student needs attention — triggered in 1 click.', color: '#f87171' },
-  { icon: '🎯', title: 'Career Roadmaps', desc: '3 personalized 24-month career paths with probability scores, generated directly from the student\'s grades.', color: '#34d399' },
-  { icon: '🏆', title: 'Gamified Learning', desc: 'XP, badges, streaks, and levels turn academic monitoring into motivation — students want to improve.', color: '#fb923c' }
+const TYPEWRITER_TEXTS = [
+  'Know Every Student.',
+  'Prevent Every Dropout.',
+  'Guide Every Future.',
+  'Empower Every Teacher.',
 ];
 
 const DASHBOARDS = [
-  { type: 'college_student', label: 'College Student', icon: '🎓', desc: 'Gamified academic dashboard', color: '#38bdf8', gradient: 'from #0ea5e9 to #3b82f6' },
-  { type: 'scm', label: 'SCM Command', icon: '🎙️', desc: 'Voice-powered control center', color: '#a78bfa', gradient: 'from #8b5cf6 to #6d28d9' },
-  { type: 'parent', label: 'Parent Portal', icon: '👨‍👧', desc: 'Warm, simple student updates', color: '#fb923c', gradient: 'from #f97316 to #ea580c' },
-  { type: 'school_student', label: 'School Portal', icon: '🏫', desc: 'Class 3–12 experience', color: '#34d399', gradient: 'from #10b981 to #059669' },
-  { type: 'admin', label: 'Admin Analytics', icon: '📊', desc: 'Department-level AI insights', color: '#c084fc', gradient: 'from #a855f7 to #7c3aed' }
+  { icon: '🎓', title: 'College Student', subtitle: 'Sparky AI · Career Navigator · XP System', color: '#3B82F6', path: '/login' },
+  { icon: '📚', title: 'School Student', subtitle: 'Gamified Learning · Learning Games · Streaks', color: '#10B981', path: '/login' },
+  { icon: '👨‍🏫', title: 'SCM Dashboard', subtitle: 'K-Means Clusters · Attendance · Parent Alerts', color: '#8B5CF6', path: '/login' },
+  { icon: '👨', title: 'Parent Portal', subtitle: 'Real-time Alerts · Multilingual · Mobile', color: '#F59E0B', path: '/login' },
+  { icon: '👨‍💼', title: 'Admin Analytics', subtitle: 'NEP · SDG · Institution-wide AI Insights', color: '#EF4444', path: '/login' },
 ];
 
-const globalCSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&family=Space+Mono:wght@700&display=swap');
-  @keyframes fadeInUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes float { 0%,100% { transform: translateY(0px); } 50% { transform: translateY(-12px); } }
-  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
-  @keyframes gradientShift { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-  @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 20px rgba(0,191,255,0.3); } 50% { box-shadow: 0 0 40px rgba(0,191,255,0.7); } }
-  @keyframes scanline { 0% { top: -100%; } 100% { top: 100%; } }
-  .hero-btn-primary { background: linear-gradient(135deg, #00BFFF, #0080FF); transition: all 0.3s ease; }
-  .hero-btn-primary:hover { transform: translateY(-3px); box-shadow: 0 10px 40px rgba(0,191,255,0.5) !important; }
-  .hero-btn-secondary:hover { background: rgba(255,255,255,0.12) !important; transform: translateY(-3px); }
-  .dashboard-card:hover { transform: translateY(-8px) !important; }
-  .feature-card:hover { transform: translateY(-6px) !important; border-color: rgba(0,191,255,0.4) !important; background: rgba(255,255,255,0.07) !important; }
-  .problem-card:hover { transform: translateY(-6px) !important; border-color: rgba(239,68,68,0.5) !important; background: rgba(239,68,68,0.08) !important; }
-`;
+const STATS = [
+  { value: 250, suffix: 'M+', label: 'Students in India' },
+  { value: 29, suffix: '%', label: 'College Dropout Rate' },
+  { value: 5, suffix: '', label: 'AI-Powered Dashboards' },
+  { value: 3, suffix: '', label: 'Gemini Career Paths' },
+];
 
 export default function LandingPage() {
-  const [scrolled, setScrolled] = useState(false);
+  const navigate = useNavigate();
+  const [typeIdx, setTypeIdx] = useState(0);
+  const [typeText, setTypeText] = useState('');
+  const [typing, setTyping] = useState(true);
+  const [statsVisible, setStatsVisible] = useState(false);
+  const statsRef = useRef(null);
 
+  // 4 individual counter hooks (cannot use hooks inside .map())
+  const c0 = useCounter(STATS[0].value, 1800, statsVisible);
+  const c1 = useCounter(STATS[1].value, 1800, statsVisible);
+  const c2 = useCounter(STATS[2].value, 1800, statsVisible);
+  const c3 = useCounter(STATS[3].value, 1800, statsVisible);
+  const counters = [c0, c1, c2, c3];
+
+
+  // Typewriter effect
   useEffect(() => {
-    const styleEl = document.createElement('style');
-    styleEl.innerText = globalCSS;
-    document.head.appendChild(styleEl);
-    const onScroll = () => setScrolled(window.scrollY > 50);
-    window.addEventListener('scroll', onScroll);
-    return () => { window.removeEventListener('scroll', onScroll); document.head.removeChild(styleEl); };
+    const full = TYPEWRITER_TEXTS[typeIdx];
+    let i = typing ? 0 : full.length;
+    const timer = setInterval(() => {
+      if (typing) {
+        i++;
+        setTypeText(full.slice(0, i));
+        if (i === full.length) { clearInterval(timer); setTimeout(() => setTyping(false), 1400); }
+      } else {
+        i--;
+        setTypeText(full.slice(0, i));
+        if (i === 0) { clearInterval(timer); setTypeIdx(prev => (prev + 1) % TYPEWRITER_TEXTS.length); setTyping(true); }
+      }
+    }, typing ? 55 : 28);
+    return () => clearInterval(timer);
+  }, [typeIdx, typing]);
+
+  // Stats counter trigger
+  useEffect(() => {
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setStatsVisible(true); }, { threshold: 0.4 });
+    if (statsRef.current) obs.observe(statsRef.current);
+    return () => obs.disconnect();
   }, []);
 
   return (
-    <div style={{ background: '#020617', color: 'white', minHeight: '100vh', fontFamily: "'Plus Jakarta Sans', sans-serif", overflowX: 'hidden' }}>
-      <ParticleCanvas />
+    <div style={{ minHeight: '100vh', background: '#0A1628', color: 'white', fontFamily: "'Nunito', sans-serif", overflowX: 'hidden' }}>
+      <style>{`
+        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+        @keyframes fadeUp { from{opacity:0;transform:translateY(30px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes gradientShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        .lp-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,191,255,0.4) !important; }
+        .lp-card:hover { transform: translateY(-6px); box-shadow: 0 20px 50px rgba(0,0,0,0.4) !important; }
+        .lp-dash:hover { transform: scale(1.03) translateY(-4px); }
+      `}</style>
 
-      {/* ── NAVBAR ─────────────────────────────────────── */}
-      <nav style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-        padding: '16px 5%',
-        background: scrolled ? 'rgba(2,6,23,0.95)' : 'transparent',
-        backdropFilter: scrolled ? 'blur(20px)' : 'none',
-        borderBottom: scrolled ? '1px solid rgba(0,191,255,0.12)' : 'none',
-        transition: 'all 0.4s ease',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '36px', height: '36px', background: 'linear-gradient(135deg, #00BFFF, #0080FF)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', boxShadow: '0 0 20px rgba(0,191,255,0.4)', animation: 'pulse-glow 3s ease-in-out infinite' }}>🎓</div>
-          <div>
-            <div style={{ fontFamily: "'Fredoka One', cursive", fontSize: '22px', color: '#00BFFF', lineHeight: 1 }}>EduPulse</div>
-            <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.4)', letterSpacing: '2px', textTransform: 'uppercase' }}>HAWKATHON 2026</div>
-          </div>
+      {/* NAV */}
+      <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, background: 'rgba(10,22,40,0.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.07)', padding: '0 40px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#3B82F6,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>⚡</div>
+          <span style={{ fontFamily: "'Fredoka One', cursive", fontSize: '22px', background: 'linear-gradient(135deg,#00BFFF,#8B5CF6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>EduPulse</span>
+          <span style={{ background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.4)', borderRadius: '99px', padding: '2px 10px', fontSize: '11px', fontWeight: 700, color: '#A78BFA', marginLeft: '4px' }}>Hawkathon 2026</span>
         </div>
-
-        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-          {[['#features', 'Features'], ['#how-it-works', 'Pipeline'], ['#sdg', 'NEP & SDG']].map(([href, label]) => (
-            <a key={href} href={href} style={{ color: 'rgba(255,255,255,0.65)', textDecoration: 'none', padding: '8px 14px', fontSize: '13px', fontWeight: 600, borderRadius: '8px', transition: 'all 0.2s' }}
-              onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-              onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.65)'; e.currentTarget.style.background = 'transparent'; }}>{label}</a>
-          ))}
-          <Link to="/login" style={{ marginLeft: '8px', padding: '9px 20px', background: 'rgba(0,191,255,0.15)', border: '1px solid rgba(0,191,255,0.4)', borderRadius: '10px', color: '#00BFFF', fontWeight: 700, fontSize: '13px', textDecoration: 'none', transition: 'all 0.2s' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,191,255,0.25)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,191,255,0.15)'}>
-            Sign In →
-          </Link>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <Link to="/login" style={{ padding: '8px 20px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '8px', color: 'rgba(255,255,255,0.85)', textDecoration: 'none', fontSize: '14px', fontWeight: 700, transition: 'all 0.2s' }}>Sign In</Link>
+          <Link to="/login" className="lp-btn" style={{ padding: '8px 20px', background: 'linear-gradient(135deg,#3B82F6,#8B5CF6)', border: 'none', borderRadius: '8px', color: 'white', textDecoration: 'none', fontSize: '14px', fontWeight: 700, transition: 'all 0.3s' }}>Get Started →</Link>
         </div>
       </nav>
 
-      {/* ── HERO ──────────────────────────────────────── */}
-      <section style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '120px 5% 80px', position: 'relative', zIndex: 1 }}>
-        {/* Glow orbs */}
-        <div style={{ position: 'absolute', top: '20%', left: '15%', width: '400px', height: '400px', background: 'radial-gradient(circle, rgba(0,191,255,0.08), transparent 70%)', borderRadius: '50%', pointerEvents: 'none' }} />
-        <div style={{ position: 'absolute', bottom: '20%', right: '10%', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(0,255,127,0.06), transparent 70%)', borderRadius: '50%', pointerEvents: 'none' }} />
-
-        <div style={{ maxWidth: '960px', animation: 'fadeInUp 0.8s ease both' }}>
-          {/* Badge */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, rgba(0,191,255,0.15), rgba(0,128,255,0.1))', border: '1px solid rgba(0,191,255,0.35)', borderRadius: '99px', padding: '7px 18px', marginBottom: '32px', fontSize: '13px', fontWeight: 700, color: '#00BFFF' }}>
-            🏆 Hawkathon 2026 · AI for Education · India-First
+      {/* HERO */}
+      <section style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', position: 'relative', paddingTop: '64px' }}>
+        <ParticleCanvas />
+        <div style={{ position: 'relative', zIndex: 2, maxWidth: '900px', padding: '0 24px', animation: 'fadeUp 0.8s ease' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.35)', borderRadius: '99px', padding: '8px 20px', marginBottom: '32px', fontSize: '14px', fontWeight: 700, color: '#C4B5FD' }}>
+            <span style={{ width: '8px', height: '8px', background: '#10B981', borderRadius: '50%', animation: 'pulse 1.5s infinite' }} />
+            AI-Powered Student Intelligence Platform · Hawkathon 2026
           </div>
 
-          {/* Main headline */}
-          <h1 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(44px, 8vw, 88px)', lineHeight: 1.05, margin: '0 0 12px', letterSpacing: '-1px' }}>
-            Know Every Student.
-          </h1>
-          <h1 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(44px, 8vw, 88px)', lineHeight: 1.05, margin: '0 0 32px', background: 'linear-gradient(135deg, #00BFFF 0%, #00FF7F 60%, #38bdf8 100%)', backgroundSize: '200% 200%', animation: 'gradientShift 4s ease infinite', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            Guide Every Future.
-          </h1>
-
-          {/* Typewriter */}
-          <div style={{ fontSize: 'clamp(16px, 2.5vw, 22px)', color: 'rgba(255,255,255,0.55)', fontWeight: 400, marginBottom: '16px', minHeight: '36px', fontFamily: "'Space Mono', monospace" }}>
-            <Typewriter words={['AI-powered dropout prevention.', 'Real-time parent alerts via Gmail.', 'K-Means student clustering.', 'Voice-controlled SCM dashboard.', 'Career roadmaps from actual grades.']} speed={60} pause={2200} />
+          <div style={{ fontSize: 'clamp(42px,7vw,84px)', fontFamily: "'Fredoka One', cursive", lineHeight: 1.1, marginBottom: '8px', background: 'linear-gradient(135deg,#FFFFFF,#93C5FD,#C4B5FD)', backgroundSize: '200%', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', animation: 'gradientShift 4s ease infinite' }}>
+            EduPulse
           </div>
 
-          <p style={{ fontSize: '17px', color: 'rgba(255,255,255,0.6)', maxWidth: '640px', margin: '0 auto 48px', lineHeight: 1.8 }}>
-            Solving India's 29% college dropout rate with AI monitoring — aligned with <strong style={{ color: '#00BFFF' }}>NEP 2020</strong> and <strong style={{ color: '#00FF7F' }}>UN SDG 4</strong>.
+          <div style={{ minHeight: '72px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '32px' }}>
+            <span style={{ fontSize: 'clamp(22px,4vw,40px)', fontWeight: 800, color: '#00BFFF' }}>
+              {typeText}<span style={{ animation: 'pulse 0.7s infinite', color: '#00BFFF', opacity: 0.8 }}>|</span>
+            </span>
+          </div>
+
+          <p style={{ fontSize: '18px', color: 'rgba(255,255,255,0.65)', lineHeight: 1.8, maxWidth: '600px', margin: '0 auto 48px' }}>
+            India's first multi-stakeholder AI platform combining MongoDB, K-Means ML clustering, Gemini AI career paths, and real-time SMTP parent alerts — built for every student's success.
           </p>
 
-          {/* CTA buttons */}
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '64px' }}>
-            <Link to="/login" className="hero-btn-primary" style={{ padding: '16px 36px', borderRadius: '14px', color: 'white', fontWeight: 800, fontSize: '16px', textDecoration: 'none', boxShadow: '0 0 30px rgba(0,191,255,0.35)', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-              🚀 Try All 5 Dashboards
-            </Link>
-            <a href="#features" className="hero-btn-secondary" style={{ padding: '16px 36px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '14px', color: 'white', fontWeight: 700, fontSize: '16px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px', transition: 'all 0.3s ease' }}>
-              📖 See How It Works
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button onClick={() => navigate('/login')} className="lp-btn"
+              style={{ padding: '16px 36px', background: 'linear-gradient(135deg,#3B82F6,#8B5CF6)', border: 'none', borderRadius: '14px', color: 'white', fontWeight: 800, fontSize: '17px', cursor: 'pointer', fontFamily: "'Nunito', sans-serif", transition: 'all 0.3s', boxShadow: '0 4px 24px rgba(59,130,246,0.4)' }}>
+              🚀 Try Live Demo
+            </button>
+            <a href="#features"
+              style={{ padding: '16px 36px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '14px', color: 'white', fontWeight: 700, fontSize: '17px', textDecoration: 'none', transition: 'all 0.3s' }}>
+              🎯 See Features ↓
             </a>
           </div>
 
-          {/* Floating avatars */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '16px' }}>
-            {['🧑‍💻', '👩‍🔬', '🤖', '🧑‍🔧', '👩‍💼', '👨‍🏫', '👨‍👧'].map((emoji, i) => (
-              <div key={i} style={{
-                width: '52px', height: '52px', borderRadius: '50%',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1.5px solid rgba(0,191,255,0.25)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '22px', animation: `float ${2.5 + i * 0.4}s ease-in-out infinite`,
-                animationDelay: `${i * 0.15}s`, backdropFilter: 'blur(4px)'
-              }}>{emoji}</div>
-            ))}
-          </div>
+          {/* Floating emojis */}
+          {['🎓', '🤖', '📊', '🏆', '💡', '🔥'].map((e, i) => (
+            <span key={i} style={{ position: 'absolute', fontSize: '32px', animation: `float ${2.5 + i * 0.4}s ease-in-out infinite`, animationDelay: `${i * 0.5}s`, opacity: 0.5, top: `${20 + i * 12}%`, left: i % 2 === 0 ? `${5 + i * 2}%` : `${88 - i * 2}%`, pointerEvents: 'none' }}>{e}</span>
+          ))}
         </div>
       </section>
 
-      {/* ── ANIMATED STATS BAR ─────────────────────────── */}
-      <section style={{ background: 'linear-gradient(135deg, rgba(0,191,255,0.07), rgba(0,128,255,0.04))', borderTop: '1px solid rgba(0,191,255,0.15)', borderBottom: '1px solid rgba(0,191,255,0.1)', padding: '48px 5%', position: 'relative', zIndex: 1 }}>
-        <div style={{ maxWidth: '1100px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', textAlign: 'center' }}>
+      {/* STATS */}
+      <section ref={statsRef} style={{ padding: '80px 40px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '24px', textAlign: 'center' }}>
           {STATS.map((s, i) => (
-            <div key={i} style={{ padding: '8px' }}>
-              <div style={{ fontSize: '32px', marginBottom: '8px' }}>{s.icon}</div>
-              <div style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(36px, 5vw, 52px)', color: '#00BFFF', lineHeight: 1, textShadow: '0 0 30px rgba(0,191,255,0.4)' }}>
-                <AnimatedCounter target={s.value} suffix={s.suffix} />
+            <div key={i}>
+              <div style={{ fontFamily: "'Fredoka One', cursive", fontSize: '56px', background: 'linear-gradient(135deg,#00BFFF,#8B5CF6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', lineHeight: 1 }}>
+                {counters[i]}{s.suffix}
               </div>
-              <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: '14px', marginTop: '8px', fontWeight: 600 }}>{s.label}</div>
+              <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.55)', marginTop: '8px', fontWeight: 600 }}>{s.label}</div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* ── PROBLEM SECTION ──────────────────────────── */}
-      <section id="problems" style={{ padding: '100px 5%', maxWidth: '1200px', margin: '0 auto', position: 'relative', zIndex: 1 }}>
+      {/* PROBLEM */}
+      <section style={{ padding: '100px 40px', maxWidth: '1100px', margin: '0 auto' }} id="features">
         <div style={{ textAlign: 'center', marginBottom: '64px' }}>
-          <div style={{ display: 'inline-block', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '99px', padding: '6px 18px', color: '#f87171', fontWeight: 700, fontSize: '12px', letterSpacing: '2px', marginBottom: '16px' }}>⚠️ THE PROBLEM TODAY</div>
-          <h2 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(32px, 5vw, 52px)', margin: '0 0 16px' }}>Five Critical Failures in<br />Indian Education</h2>
-          <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '17px', maxWidth: '500px', margin: '0 auto' }}>These aren't hypothetical. They affect millions of students right now.</p>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '20px' }}>
-          {PROBLEMS.map((p, i) => (
-            <div key={i} className="problem-card" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '18px', padding: '28px', transition: 'all 0.35s ease', cursor: 'default' }}>
-              <div style={{ fontSize: '40px', marginBottom: '16px' }}>{p.icon}</div>
-              <h3 style={{ fontFamily: "'Fredoka One', cursive", fontSize: '20px', margin: '0 0 10px', color: '#fca5a5' }}>{p.title}</h3>
-              <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '14px', lineHeight: 1.7, margin: 0 }}>{p.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── SOLUTION / FEATURES ──────────────────────── */}
-      <section id="features" style={{ padding: '100px 5%', background: 'rgba(0,191,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.04)', position: 'relative', zIndex: 1 }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{ textAlign: 'center', marginBottom: '64px' }}>
-            <div style={{ display: 'inline-block', background: 'rgba(0,191,255,0.12)', border: '1px solid rgba(0,191,255,0.3)', borderRadius: '99px', padding: '6px 18px', color: '#00BFFF', fontWeight: 700, fontSize: '12px', letterSpacing: '2px', marginBottom: '16px' }}>✅ THE EDUPULSE SOLUTION</div>
-            <h2 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(32px, 5vw, 52px)', margin: '0 0 16px' }}>Everything Judges Asked For,<br /><span style={{ color: '#00BFFF' }}>and Then Some</span></h2>
-            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '17px', maxWidth: '500px', margin: '0 auto' }}>6 core AI features working together as one platform.</p>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
-            {FEATURES.map((f, i) => (
-              <div key={i} className="feature-card" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '20px', padding: '28px', display: 'flex', gap: '20px', alignItems: 'flex-start', transition: 'all 0.35s ease' }}>
-                <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: `${f.color}18`, border: `1.5px solid ${f.color}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', flexShrink: 0 }}>{f.icon}</div>
-                <div>
-                  <h3 style={{ fontFamily: "'Fredoka One', cursive", fontSize: '19px', margin: '0 0 8px', color: f.color }}>{f.title}</h3>
-                  <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '14px', lineHeight: 1.7, margin: 0 }}>{f.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── HOW IT WORKS ─────────────────────────────── */}
-      <section id="how-it-works" style={{ padding: '100px 5%', position: 'relative', zIndex: 1 }}>
-        <div style={{ maxWidth: '1100px', margin: '0 auto', textAlign: 'center' }}>
-          <div style={{ display: 'inline-block', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '99px', padding: '6px 18px', color: '#a78bfa', fontWeight: 700, fontSize: '12px', letterSpacing: '2px', marginBottom: '16px' }}>⚙️ THE PIPELINE</div>
-          <h2 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(32px, 5vw, 52px)', margin: '0 0 64px' }}>5-Step Intelligent Flow</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0', position: 'relative' }}>
-            {/* Connecting line */}
-            <div style={{ position: 'absolute', top: '35px', left: '10%', right: '10%', height: '2px', background: 'linear-gradient(90deg, rgba(0,191,255,0.1), rgba(0,191,255,0.6), rgba(0,191,255,0.1))', zIndex: 0 }} />
-            {[
-              { step: '01', icon: '🗄️', title: 'Data Centralized', desc: 'Grades, attendance, and mood stream into MongoDB Atlas in real time.' },
-              { step: '02', icon: '🤖', title: 'K-Means Clustering', desc: 'Python ML microservice sorts students into performance clusters weekly.' },
-              { step: '03', icon: '📧', title: 'Smart Alerts', desc: 'At-risk signals trigger real Gmail emails to parents — one-click delivery.' },
-              { step: '04', icon: '🎙️', title: 'SCM Command', desc: 'Voice-powered dashboard gives SCMs instant insights and intervention tools.' },
-              { step: '05', icon: '🚀', title: 'Career AI', desc: 'Gemini generates 3 personalised career paths with probability from real grades.' }
-            ].map((s, i) => (
-              <div key={i} style={{ textAlign: 'center', padding: '0 12px', position: 'relative', zIndex: 1 }}>
-                <div style={{ width: '70px', height: '70px', borderRadius: '50%', margin: '0 auto 20px', background: 'radial-gradient(circle, rgba(0,191,255,0.2), rgba(2,6,23,1) 70%)', border: '2px solid rgba(0,191,255,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '28px', position: 'relative', boxShadow: '0 0 20px rgba(0,191,255,0.15)' }}>
-                  {s.icon}
-                  <span style={{ position: 'absolute', top: '-10px', right: '-10px', background: 'linear-gradient(135deg, #00BFFF, #0080FF)', color: '#020617', borderRadius: '99px', width: '24px', height: '24px', fontSize: '10px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.step}</span>
-                </div>
-                <h3 style={{ fontFamily: "'Fredoka One', cursive", fontSize: '16px', marginBottom: '8px', color: '#00BFFF' }}>{s.title}</h3>
-                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '13px', lineHeight: 1.7, margin: 0 }}>{s.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── NEP + SDG ─────────────────────────────────── */}
-      <section id="sdg" style={{ padding: '100px 5%', background: 'linear-gradient(135deg, rgba(16,185,129,0.04), rgba(0,191,255,0.03))', borderTop: '1px solid rgba(16,185,129,0.12)', position: 'relative', zIndex: 1 }}>
-        <div style={{ maxWidth: '1000px', margin: '0 auto', textAlign: 'center' }}>
-          <div style={{ display: 'inline-block', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '99px', padding: '6px 18px', color: '#34d399', fontWeight: 700, fontSize: '12px', letterSpacing: '2px', marginBottom: '16px' }}>🌍 INDIA'S FUTURE</div>
-          <h2 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(32px, 5vw, 52px)', margin: '0 0 16px' }}>NEP 2020 + UN Sustainable<br />Development Goals</h2>
-          <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '17px', maxWidth: '620px', margin: '0 auto 48px', lineHeight: 1.7 }}>
-            The problem statement addresses college dropout. We solve it at two levels — college <strong style={{ color: 'white' }}>and</strong> school — because 67% of college dropouts showed warning signs in Class 8.
+          <div style={{ fontSize: '13px', fontWeight: 800, color: '#EF4444', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '16px' }}>The Crisis</div>
+          <h2 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(32px,5vw,52px)', margin: '0 0 20px' }}>India's Education System Is Failing Students Silently</h2>
+          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '17px', maxWidth: '700px', margin: '0 auto', lineHeight: 1.8 }}>
+            29% of college students drop out. Parents don't know until it's too late. Teachers can't track 60+ students manually. There's no system — until now.
           </p>
-          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '48px' }}>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '20px' }}>
+          {[
+            { icon: '😰', title: '1 in 3 students drop out', desc: 'Poor grades + attendance go unnoticed until it\'s too late for intervention.', color: '#EF4444' },
+            { icon: '👨‍🏫', title: 'Teachers are overwhelmed', desc: '60+ students per teacher. No data tools to identify who needs help first.', color: '#F59E0B' },
+            { icon: '👨‍👩‍👧', title: 'Parents are left in the dark', desc: 'No real-time alerts. Parents find out at the report card — 3 months too late.', color: '#8B5CF6' },
+          ].map((c, i) => (
+            <div key={i} className="lp-card" style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${c.color}30`, borderRadius: '20px', padding: '32px', transition: 'all 0.3s' }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>{c.icon}</div>
+              <h3 style={{ fontFamily: "'Fredoka One', cursive", fontSize: '20px', color: c.color, margin: '0 0 12px' }}>{c.title}</h3>
+              <p style={{ color: 'rgba(255,255,255,0.6)', lineHeight: 1.7, margin: 0, fontSize: '15px' }}>{c.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* SOLUTION — 4 CORE FEATURES */}
+      <section style={{ padding: '100px 40px', background: 'rgba(59,130,246,0.04)', borderTop: '1px solid rgba(59,130,246,0.1)' }}>
+        <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '64px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 800, color: '#10B981', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '16px' }}>The Solution</div>
+            <h2 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(32px,5vw,52px)', margin: '0 0 20px' }}>4 Technologies. One Platform.</h2>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '17px', maxWidth: '600px', margin: '0 auto', lineHeight: 1.8 }}>
+              Exactly what the hackathon problem statement requires — fully working, live, demo-ready.
+            </p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '24px' }}>
             {[
-              { num: 4, title: 'Quality Education', icon: '📚', color: '#E5243B' },
-              { num: 3, title: 'Good Health', icon: '💚', color: '#4C9F38' },
-              { num: 10, title: 'Reduced Inequalities', icon: '⚖️', color: '#DD1367' },
-              { num: 17, title: 'Partnerships', icon: '🤝', color: '#19486A' }
-            ].map((sdg, i) => (
-              <div key={i} style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${sdg.color}50`, borderRadius: '18px', padding: '24px 28px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', minWidth: '150px', transition: 'all 0.3s ease' }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-6px)'; e.currentTarget.style.boxShadow = `0 12px 40px ${sdg.color}30`; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
-                <div style={{ fontSize: '36px' }}>{sdg.icon}</div>
-                <div style={{ fontFamily: "'Fredoka One', cursive", fontSize: '24px', color: sdg.color }}>SDG {sdg.num}</div>
-                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', fontWeight: 600, textAlign: 'center' }}>{sdg.title}</div>
-                <div style={{ color: '#34d399', fontSize: '16px', fontWeight: 700 }}>✅ Implemented</div>
+              { num: '01', icon: '🗄️', title: 'MongoDB — Single Source of Truth', desc: '5 student profiles, grades, attendance, moods, alerts — all in Atlas. One database powers every dashboard, every dashboard reflects real data.', color: '#10B981', badge: 'Required ✅' },
+              { num: '02', icon: '🤖', title: 'K-Means ML Clustering', desc: 'Pure JavaScript K-Means (no Python needed) runs on all students post-seed. Assigns Top / Medium / Below Average clusters. SCM sees actionable cohorts instantly.', color: '#3B82F6', badge: 'Required ✅' },
+              { num: '03', icon: '📧', title: 'SMTP Parent Alerts — Real Gmail', desc: 'SCM clicks "Alert Parent" → Gemini writes a beautiful HTML email → Nodemailer sends via Gmail SMTP. Real email arrives in parent\'s inbox in seconds.', color: '#F59E0B', badge: 'Required ✅' },
+              { num: '04', icon: '✨', title: 'Gemini AI — 3 Career Roadmaps', desc: 'Student clicks "Generate" → Gemini 1.5 Flash analyzes grades, department, attendance → generates 3 personalized 24-month career roadmaps with certs and milestones.', color: '#8B5CF6', badge: 'Required ✅' },
+            ].map((f, i) => (
+              <div key={i} className="lp-card" style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${f.color}30`, borderRadius: '20px', padding: '36px', transition: 'all 0.3s', position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: '20px', right: '20px', background: `${f.color}20`, border: `1px solid ${f.color}40`, borderRadius: '99px', padding: '4px 12px', fontSize: '12px', fontWeight: 700, color: f.color }}>{f.badge}</div>
+                <div style={{ fontFamily: "'Fredoka One', cursive", fontSize: '64px', color: `${f.color}20`, position: 'absolute', bottom: '16px', right: '16px', lineHeight: 1 }}>{f.num}</div>
+                <div style={{ fontSize: '40px', marginBottom: '16px' }}>{f.icon}</div>
+                <h3 style={{ fontFamily: "'Fredoka One', cursive", fontSize: '22px', color: f.color, margin: '0 0 14px' }}>{f.title}</h3>
+                <p style={{ color: 'rgba(255,255,255,0.65)', lineHeight: 1.8, margin: 0, fontSize: '15px' }}>{f.desc}</p>
               </div>
             ))}
           </div>
-          <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '20px', padding: '36px', border: '1px solid rgba(16,185,129,0.2)', textAlign: 'left' }}>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-              <div style={{ fontSize: '32px', flexShrink: 0 }}>💡</div>
-              <p style={{ fontSize: '17px', lineHeight: 1.8, margin: 0, color: 'rgba(255,255,255,0.82)', fontStyle: 'italic' }}>
-                "We went beyond the problem statement. A college dropout monitor was required — we built that <em>and</em> extended it to Classes 3–12 because <strong style={{ color: '#34d399' }}>catching at-risk students in school prevents college dropout 4 years later</strong>. That's not just solving the problem. That's solving the root cause."
-              </p>
+        </div>
+      </section>
+
+      {/* 5 DASHBOARDS */}
+      <section style={{ padding: '100px 40px', maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: '64px' }}>
+          <div style={{ fontSize: '13px', fontWeight: 800, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '3px', marginBottom: '16px' }}>5 Stakeholder Views</div>
+          <h2 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(28px,4vw,44px)', margin: 0 }}>Every Stakeholder Has a Dashboard</h2>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: '16px' }}>
+          {DASHBOARDS.map((d, i) => (
+            <div key={i} onClick={() => navigate(d.path)} className="lp-dash"
+              style={{ background: `${d.color}10`, border: `1px solid ${d.color}30`, borderRadius: '18px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.3s' }}>
+              <div style={{ fontSize: '40px', marginBottom: '14px', animation: `float ${2.5 + i * 0.3}s ease-in-out infinite` }}>{d.icon}</div>
+              <div style={{ fontFamily: "'Fredoka One', cursive", fontSize: '16px', color: d.color, marginBottom: '8px' }}>{d.title}</div>
+              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.45)', lineHeight: 1.6 }}>{d.subtitle}</div>
             </div>
+          ))}
+        </div>
+      </section>
+
+      {/* NEP + SDG */}
+      <section style={{ padding: '80px 40px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ maxWidth: '900px', margin: '0 auto', textAlign: 'center' }}>
+          <h2 style={{ fontFamily: "'Fredoka One', cursive", fontSize: '32px', marginBottom: '16px' }}>Aligned with NEP 2020 & UN SDG 4</h2>
+          <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '15px', marginBottom: '40px', lineHeight: 1.7 }}>
+            EduPulse directly implements India's National Education Policy 2020 goals — data-driven teaching, holistic development, and inclusive quality education as per UN Sustainable Development Goal 4.
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            {['🇮🇳 NEP 2020 Compliant', '🌍 UN SDG Goal 4', '🤖 AI-First Pedagogy', '📊 Data-Driven Teaching', '🌏 Multilingual Support', '♿ Inclusive Education'].map((badge, i) => (
+              <span key={i} style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '99px', padding: '8px 18px', fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.8)' }}>{badge}</span>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* ── DASHBOARD LAUNCHER ───────────────────────── */}
-      <section style={{ padding: '100px 5%', maxWidth: '1200px', margin: '0 auto', textAlign: 'center', position: 'relative', zIndex: 1 }}>
-        <div style={{ display: 'inline-block', background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.3)', borderRadius: '99px', padding: '6px 18px', color: '#fbbf24', fontWeight: 700, fontSize: '12px', letterSpacing: '2px', marginBottom: '16px' }}>🎯 LIVE DEMO</div>
-        <h2 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(32px, 5vw, 52px)', margin: '0 0 16px' }}>5 Dashboards. 1 Platform.</h2>
-        <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '17px', marginBottom: '48px' }}>Click any card to jump directly into that dashboard with pre-loaded demo data.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-          {DASHBOARDS.map((d, i) => (
-            <Link key={i} to={`/login?type=${d.type}`} style={{ textDecoration: 'none' }}>
-              <div className="dashboard-card" style={{ background: 'rgba(255,255,255,0.04)', border: `1.5px solid ${d.color}25`, borderRadius: '20px', padding: '32px 20px', transition: 'all 0.35s ease', cursor: 'pointer' }}>
-                <div style={{ width: '64px', height: '64px', borderRadius: '18px', background: `${d.color}18`, border: `1.5px solid ${d.color}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', margin: '0 auto 16px', boxShadow: `0 8px 24px ${d.color}20` }}>{d.icon}</div>
-                <div style={{ fontFamily: "'Fredoka One', cursive", fontSize: '17px', color: d.color, marginBottom: '6px' }}>{d.label}</div>
-                <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: '13px', marginBottom: '16px' }}>{d.desc}</div>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: d.color, opacity: 0.8 }}>Launch Demo →</div>
-              </div>
-            </Link>
-          ))}
+      {/* CTA */}
+      <section style={{ padding: '100px 40px', textAlign: 'center' }}>
+        <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+          <div style={{ fontSize: '64px', marginBottom: '24px', animation: 'float 3s ease-in-out infinite' }}>🏆</div>
+          <h2 style={{ fontFamily: "'Fredoka One', cursive", fontSize: 'clamp(32px,5vw,52px)', margin: '0 0 20px', background: 'linear-gradient(135deg,#FFD700,#F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            Ready to Experience EduPulse?
+          </h2>
+          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '17px', marginBottom: '48px', lineHeight: 1.8 }}>
+            5 live dashboards. Real Gemini AI. Real Gmail emails. Real MongoDB. Built for Hawkathon 2026.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            {[
+              { label: '🎓 Student Login', email: 'aarav@demo.com', color: '#3B82F6' },
+              { label: '👨‍🏫 SCM Login', email: 'scm@demo.com', color: '#8B5CF6' },
+              { label: '👨 Parent Login', email: 'parent.aarav@demo.com', color: '#F59E0B' },
+              { label: '👨‍💼 Admin Login', email: 'admin@demo.com', color: '#10B981' },
+            ].map((btn, i) => (
+              <button key={i} onClick={() => navigate('/login')} className="lp-btn"
+                style={{ padding: '14px 28px', background: `${btn.color}20`, border: `1px solid ${btn.color}50`, borderRadius: '12px', color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer', fontFamily: "'Nunito', sans-serif", transition: 'all 0.3s' }}>
+                {btn.label}
+                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.45)', fontWeight: 400, marginTop: '2px' }}>{btn.email} · demo123</div>
+              </button>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* ── FOOTER ───────────────────────────────────── */}
-      <footer style={{ background: 'rgba(0,0,0,0.4)', borderTop: '1px solid rgba(255,255,255,0.06)', padding: '48px 5% 32px', textAlign: 'center', position: 'relative', zIndex: 1 }}>
-        <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center' }}>
-          <div style={{ width: '32px', height: '32px', background: 'linear-gradient(135deg, #00BFFF, #0080FF)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>🎓</div>
-          <div style={{ fontFamily: "'Fredoka One', cursive", fontSize: '22px', color: '#00BFFF' }}>EduPulse</div>
+      {/* FOOTER */}
+      <footer style={{ borderTop: '1px solid rgba(255,255,255,0.07)', padding: '32px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontFamily: "'Fredoka One', cursive", fontSize: '20px', background: 'linear-gradient(135deg,#00BFFF,#8B5CF6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>EduPulse</span>
+          <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>· Hawkathon 2026</span>
         </div>
-        <p style={{ color: 'rgba(255,255,255,0.4)', fontSize: '14px', maxWidth: '500px', margin: '0 auto 24px', lineHeight: 1.7 }}>
-          Know Every Student. Guide Every Future.<br />Built with ❤️ for Hawkathon 2026.
-        </p>
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '24px' }}>
-          {['NEP 2020 Aligned ✅', 'SDG 4 Contributor 🌍', 'Real Gmail Alerts 📧', 'MongoDB Atlas 🗄️', 'Gemini AI 🤖'].map((b, i) => (
-            <span key={i} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '99px', padding: '5px 16px', fontSize: '12px', color: 'rgba(255,255,255,0.55)', fontWeight: 600 }}>{b}</span>
-          ))}
+        <div style={{ display: 'flex', gap: '16px', fontSize: '13px', color: 'rgba(255,255,255,0.35)' }}>
+          <span>MongoDB</span><span>·</span><span>Gemini AI</span><span>·</span><span>K-Means</span><span>·</span><span>Gmail SMTP</span>
         </div>
-        <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: '12px' }}>Backend: Node.js + Express + MongoDB Atlas · Frontend: React + Vite · AI: Google Gemini</p>
+        <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.3)' }}>Built with ❤️ for India's students</div>
       </footer>
     </div>
   );

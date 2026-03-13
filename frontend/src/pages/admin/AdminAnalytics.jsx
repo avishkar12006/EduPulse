@@ -220,6 +220,29 @@ export default function AdminAnalytics() {
           ))}
         </div>
 
+        {/* PROBLEM STATEMENT IMPACT STATS — from Hawkathon document */}
+        <div style={{ background:'linear-gradient(135deg,#0f172a,#020617)', border:'1px solid rgba(56,189,248,0.15)', borderRadius:'16px', padding:'20px 28px' }}>
+          <div style={{ fontSize:'11px', color:'rgba(56,189,248,0.6)', fontWeight:700, letterSpacing:'2px', marginBottom:'16px' }}>
+            📊 WHY THIS PROBLEM NEEDS TO BE SOLVED — AISHE / UNESCO / NSSO DATA
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:'0' }}>
+            {[
+              { stat:'29%',  label:'Undergrad dropout rate in India',           src:'AISHE Report',       color:'#f43f5e' },
+              { stat:'67%',  label:'At-risk students show signs in Semester 1', src:'UNESCO',             color:'#f59e0b' },
+              { stat:'1:250',label:'Student-to-counselor ratio',                src:'Avg. Indian College', color:'#38bdf8' },
+              { stat:'78%',  label:'Parents not informed before failure',        src:'NSSO Survey',       color:'#f43f5e' },
+              { stat:'3.2×', label:'Higher recovery with early intervention',    src:'Research',          color:'#10b981' },
+              { stat:'<5%',  label:'Institutions using predictive analytics',    src:'Industry Report',   color:'#a78bfa' },
+            ].map((item, i) => (
+              <div key={i} style={{ borderLeft: i===0?'none':'1px solid rgba(255,255,255,0.06)', padding:'0 20px' }}>
+                <div style={{ fontFamily:"'Space Mono',monospace", fontSize:'24px', fontWeight:700, color:item.color, lineHeight:1, marginBottom:'6px' }}>{item.stat}</div>
+                <div style={{ fontSize:'11px', color:'rgba(255,255,255,0.65)', lineHeight:1.5, marginBottom:'4px' }}>{item.label}</div>
+                <div style={{ fontSize:'9px', color:'rgba(255,255,255,0.25)', letterSpacing:'0.5px' }}>— {item.src}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* CHARTS ROW */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 24 }}>
           {/* Cluster Doughnut */}

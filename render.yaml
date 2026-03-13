@@ -1,0 +1,29 @@
+services:
+  # ── Backend API + serves built frontend ────────────────────────────────────
+  - type: web
+    name: edupulse-backend
+    env: node
+    region: singapore          # closest to India
+    plan: free
+    rootDir: .
+    buildCommand: |
+      cd frontend && npm install && npm run build && cd ../backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGO_URI
+        sync: false            # set manually in Render dashboard
+      - key: JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      # Set FRONTEND_URL only if deploying frontend separately on Vercel:
+      # - key: FRONTEND_URL
+      #   value: https://edupulse.vercel.app

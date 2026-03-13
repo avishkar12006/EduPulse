@@ -16,7 +16,9 @@ const userSchema = new mongoose.Schema({
   studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
   parentOf: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Student' }],
   lastLogin: { type: Date },
-  isActive: { type: Boolean, default: true }
+  isActive: { type: Boolean, default: true },
+  resetOtp:       { type: String },       // hashed OTP for password reset
+  resetOtpExpiry: { type: Date },         // OTP expiration (10 min window)
 }, { timestamps: true });
 
 // Hash password before save

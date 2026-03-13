@@ -1,6 +1,7 @@
 const axios = require('axios');
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+
 
 async function callGemini(prompt, systemPrompt = '') {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -28,13 +29,50 @@ async function callGemini(prompt, systemPrompt = '') {
 }
 
 async function sparkyChatResponse({ message, studentName, semester, cluster, attendancePercentage, moodToday, chatHistory = [] }) {
-  const systemPrompt = `You are Sparky 🤖, a friendly and encouraging AI academic buddy for students at EduPulse.
-Student info: Name: ${studentName}, Semester: ${semester}, Cluster: ${cluster || 'medium'}, Attendance: ${attendancePercentage}%, Current mood score: ${moodToday || 3}/5.
-Be warm, use emojis, keep responses under 3 sentences. Always encouraging. If mood is low (1-2), prioritize emotional support over academics.
-Never be negative or critical. Always end on a positive note.`;
-  
-  return await callGemini(message, systemPrompt);
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+    throw new Error('GEMINI_API_KEY not configured in backend .env');
+  }
+
+  const persona = `[SYSTEM: You are Sparky 🤖, a friendly and highly knowledgeable AI academic buddy for EduPulse.
+Student: ${studentName}, Semester ${semester}, Cluster: ${cluster || 'medium'}, Attendance: ${attendancePercentage}%, Mood: ${moodToday || 3}/5.
+For academic questions: give COMPLETE, detailed explanations with examples and bullet points. No length limits.
+For emotional questions: be warm and supportive. Always encouraging. Use emojis naturally. Reference NCERT/CBSE where relevant.]
+
+`;
+
+  // Build conversation contents — always starts with user role
+  const contents = [];
+
+  const filteredHistory = chatHistory.filter(m => m.role === 'user' || m.role === 'sparky');
+  for (const m of filteredHistory) {
+    contents.push({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.text }],
+    });
+  }
+
+  // Prepend system persona into the current user message (safe for REST API)
+  const finalMessage = contents.length === 0 ? (persona + message) : message;
+  contents.push({ role: 'user', parts: [{ text: finalMessage }] });
+
+  try {
+    const response = await axios.post(
+      `${GEMINI_API_URL}?key=${apiKey}`,
+      {
+        contents,
+        generationConfig: { temperature: 0.75, maxOutputTokens: 2048 },
+      }
+    );
+    return response.data.candidates[0].content.parts[0].text;
+  } catch (err) {
+    const detail = err.response?.data?.error?.message || err.message;
+    console.error('Gemini sparkyChatResponse error:', detail);
+    throw new Error(detail);
+  }
 }
+
+
 
 async function generateCareerRoadmap({ student, grades, interests = [] }) {
   const gradesSummary = grades.slice(0, 10).map(g => `${g.subject}: ${g.percentage}%`).join(', ');

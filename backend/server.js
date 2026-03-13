@@ -15,17 +15,35 @@ const alertRoutes   = require('./routes/alerts');
 const careerRoutes  = require('./routes/career');
 const aiRoutes      = require('./routes/ai');
 const clusterRoutes = require('./routes/cluster');
+const schoolRoutes  = require('./routes/school');
 
 connectDB();
+
+const path = require('path');
 
 const app    = express();
 const server = http.createServer(app);
 
+// ── CORS ──────────────────────────────────────────────
+// In production set FRONTEND_URL=https://your-app.vercel.app
+// In dev it defaults to * so Vite proxy works
+const allowedOrigins = process.env.FRONTEND_URL
+  ? [process.env.FRONTEND_URL, 'http://localhost:5174', 'http://localhost:5173']
+  : ['*'];
+
+const corsOptions = {
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) cb(null, true);
+    else cb(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+};
+
 // ── Socket.io ─────────────────────────────────────────
-const io = new Server(server, { cors: { origin: '*', methods: ['GET','POST'] } });
+const io = new Server(server, { cors: { origin: allowedOrigins.includes('*') ? '*' : allowedOrigins, methods: ['GET','POST'] } });
 
 // ── Middlewares ───────────────────────────────────────
-app.use(cors({ origin: '*', credentials: false }));
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -43,19 +61,32 @@ app.use('/api/scm',        scmRoutes);
 app.use('/api/alerts',     alertRoutes);
 app.use('/api/career',     careerRoutes);
 app.use('/api/ai',         aiRoutes);
-app.use('/api/cluster',    clusterRoutes);   // ← K-Means
+app.use('/api/cluster',    clusterRoutes);
+app.use('/api/school',     schoolRoutes);
 
-// ── Socket.io ─────────────────────────────────────────
+// ── Serve React frontend in production ────────────────
+// When deployed on Render as a single service:
+// 1. Run `npm run build` in /frontend → creates /frontend/dist
+// 2. Backend serves those static files for all non-API routes
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.join(__dirname, '../frontend/dist');
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
+// ── Socket.io events ──────────────────────────────────
 io.on('connection', socket => {
   console.log(`🔌 Client connected: ${socket.id}`);
-  socket.on('join_room',         userId      => socket.join(userId));
-  socket.on('attendance_update', data        => io.emit('attendance_updated', data));
-  socket.on('alert_sent',        data        => {
+  socket.on('join_room',         userId => socket.join(userId));
+  socket.on('attendance_update', data   => io.emit('attendance_updated', data));
+  socket.on('alert_sent',        data   => {
     io.to(data.parentId).emit('new_alert', data);
     io.to(data.scmId).emit('alert_notification', data);
   });
-  socket.on('cluster_updated',   data        => io.emit('cluster_refresh', data));
-  socket.on('disconnect',        ()          => console.log(`🔌 Disconnected: ${socket.id}`));
+  socket.on('cluster_updated',   data   => io.emit('cluster_refresh', data));
+  socket.on('disconnect',        ()     => console.log(`🔌 Disconnected: ${socket.id}`));
 });
 
 // ── Error handler ─────────────────────────────────────
@@ -70,9 +101,9 @@ server.listen(PORT, () => {
   console.log(`\n🚀 EduPulse Backend running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`\n✅ API Ready at http://localhost:${PORT}/api`);
-  console.log(`🤖 K-Means: POST http://localhost:${PORT}/api/cluster/run`);
   console.log(`🏥 Health:  http://localhost:${PORT}/health\n`);
 });
+
 
 module.exports = { app, io };
 

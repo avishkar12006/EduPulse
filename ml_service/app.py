@@ -1,84 +1,212 @@
+"""
+EduPulse ML Service — Flask Application
+Mounts all ML endpoints: mood analysis, K-Means clustering, adaptive learning
+"""
 from flask import Flask, request, jsonify
-from sklearn.cluster import KMeans
-import numpy as np
+from flask_cors import CORS
 
-app = Flask(__name__)
+from mood_detector  import MoodDetector
+from kmeans_cluster import StudentClusterer
+from adaptive_engine import AdaptiveEngine
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "ML Service online and ready for clustering"})
+app      = Flask(__name__)
+CORS(app, origins=['http://localhost:5173', 'http://localhost:5174'])
 
-@app.route('/predict_cluster', methods=['POST'])
-def predict_cluster():
+detector  = MoodDetector()
+clusterer = StudentClusterer(n_clusters=3)
+engine    = AdaptiveEngine()
+
+
+# ── Health check ──────────────────────────────────────────────────────────
+
+@app.route('/', methods=['GET'])
+def health():
+    return jsonify({
+        'status': 'ok',
+        'service': 'EduPulse ML Service',
+        'version': '1.0.0',
+        'endpoints': [
+            '/mood/analyze',
+            '/mood/session-summary',
+            '/cluster/run',
+            '/cluster/student',
+            '/adaptive/learning-style',
+            '/adaptive/difficulty-adjust',
+            '/adaptive/recommend-content',
+        ],
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MOOD ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/mood/analyze', methods=['POST'])
+def mood_analyze():
     """
-    Receives an array of student features:
-    [ [healthScore, attendancePct, engagementScore], ... ]
-    Returns an array of assigned clusters: ['top', 'medium', 'below']
+    POST { image: <base64_string> }
+    Returns mood + content adjustment instruction.
     """
-    try:
-        data = request.json
-        features = data.get('features', [])
-        
-        if not features:
-            return jsonify({"error": "No features provided"}), 400
+    data = request.get_json(force=True)
+    if not data or 'image' not in data:
+        return jsonify({'error': 'Missing image field'}), 400
 
-        # Convert to numpy array
-        X = np.array(features)
-        
-        # If fewer than 3 students, we can't reliably cluster into 3 groups.
-        # Handle simple rule-based fallback
-        if len(X) < 3:
-            clusters = []
-            for student in X:
-                score, att, eng = student[0], student[1], student[2]
-                if score >= 75 and att >= 85:
-                    clusters.append('top')
-                elif score <= 50 or att <= 75:
-                    clusters.append('below')
-                else:
-                    clusters.append('medium')
-            return jsonify({"clusters": clusters})
-            
-        # Fit K-Means with exactly 3 clusters
-        # Ensure consistent seed for repeatability if needed
-        kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
-        labels = kmeans.fit_predict(X)
-        
-        # We need to map the arbitrary 0,1,2 labels to our semantic 'top', 'medium', 'below'
-        # We'll do this by looking at the cluster centers. Higher values = better.
-        centers = kmeans.cluster_centers_
-        
-        # Calculate a combined "goodness" score for each center (e.g., sum of features)
-        center_scores = centers.sum(axis=1)
-        
-        # Sort indices by goodness score (descending)
-        sorted_indices = np.argsort(-center_scores)
-        top_idx, med_idx, bel_idx = sorted_indices[0], sorted_indices[1], sorted_indices[2]
-        
-        # Create mapping from numeric label to string
-        label_map = {
-            top_idx: 'top',
-            med_idx: 'medium',
-            bel_idx: 'below'
-        }
-        
-        # Map labels
-        assigned_clusters = [label_map[l] for l in labels]
-        
-        return jsonify({
-            "clusters": assigned_clusters,
-            "centers": {
-                "top": centers[top_idx].tolist(),
-                "medium": centers[med_idx].tolist(),
-                "below": centers[bel_idx].tolist()
-            }
-        })
+    frame      = detector.decode_frame(data['image'])
+    mood       = detector.analyze_frame(frame)
+    adjustment = detector.get_content_adjustment(mood)
 
-    except Exception as e:
-        print(f"Clustering error: {str(e)}")
-        # Graceful fallback: treat heavily on simple score threshold
-        return jsonify({"error": str(e), "message": "Fell back to rule-based evaluation"}), 500
+    return jsonify({
+        'mood':       mood,
+        'adjustment': adjustment,
+        'raw': {
+            'frustratedConsecutive': detector.frustrated_consecutive,
+            'strugglingMinutes':     detector.struggling_minutes,
+        },
+    })
+
+
+@app.route('/mood/session-summary', methods=['GET'])
+def mood_session_summary():
+    """GET — returns aggregated mood stats for the current detector session."""
+    return jsonify(detector.get_session_summary())
+
+
+@app.route('/mood/reset', methods=['POST'])
+def mood_reset():
+    """POST — resets detector state for a new study session."""
+    detector.__init__()
+    return jsonify({'status': 'reset'})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# K-MEANS CLUSTERING ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/cluster/run', methods=['POST'])
+def cluster_run():
+    """
+    POST { students: [...], batchId: "..." }
+    Clusters all students and returns labels.
+    """
+    data = request.get_json(force=True)
+    if not data or 'students' not in data:
+        return jsonify({'error': 'Missing students array'}), 400
+
+    students = data['students']
+    if len(students) == 0:
+        return jsonify({'results': [], 'message': 'No students provided'}), 200
+
+    results = clusterer.cluster(students)
+
+    return jsonify({
+        'batchId':  data.get('batchId', 'manual'),
+        'results':  results,
+        'total':    len(results),
+        'summary': {
+            'top':    sum(1 for r in results if r['cluster'] == 'top'),
+            'medium': sum(1 for r in results if r['cluster'] == 'medium'),
+            'below':  sum(1 for r in results if r['cluster'] == 'below'),
+        },
+    })
+
+
+@app.route('/cluster/student', methods=['POST'])
+def cluster_student():
+    """
+    POST { student: {...} }
+    Risk assessment for a single student.
+    """
+    data = request.get_json(force=True)
+    if not data or 'student' not in data:
+        return jsonify({'error': 'Missing student object'}), 400
+
+    result = clusterer.assess_single(data['student'])
+    return jsonify(result)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADAPTIVE LEARNING ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route('/adaptive/learning-style', methods=['POST'])
+def adaptive_learning_style():
+    """
+    POST { studentId, videoTime, textTime, interactiveTime, quizScore }
+    Detects and updates VAK learning style.
+    """
+    data = request.get_json(force=True)
+    if not data or 'studentId' not in data:
+        return jsonify({'error': 'Missing studentId'}), 400
+
+    result = engine.detect_learning_style(
+        student_id    = data['studentId'],
+        video_time_s  = float(data.get('videoTime',       0)),
+        text_time_s   = float(data.get('textTime',        0)),
+        interactive_s = float(data.get('interactiveTime', 0)),
+        quiz_score    = float(data.get('quizScore',       0.5)),
+    )
+    return jsonify(result)
+
+
+@app.route('/adaptive/difficulty-adjust', methods=['POST'])
+def adaptive_difficulty():
+    """
+    POST { studentId, quizScore (0-1), mood, timeOnTask }
+    Returns new difficulty level and action.
+    """
+    data = request.get_json(force=True)
+    if not data or 'studentId' not in data:
+        return jsonify({'error': 'Missing studentId'}), 400
+
+    result = engine.adjust_difficulty(
+        student_id   = data['studentId'],
+        quiz_score   = float(data.get('quizScore',   0.7)),
+        mood         = data.get('mood', 'focused'),
+        time_on_task = float(data.get('timeOnTask',  30)),
+    )
+    return jsonify(result)
+
+
+@app.route('/adaptive/recommend-content', methods=['POST'])
+def adaptive_recommend():
+    """
+    POST { studentId, subject, weakTopics: [...] }
+    Returns prioritized content recommendations.
+    """
+    data = request.get_json(force=True)
+    if not data or 'studentId' not in data:
+        return jsonify({'error': 'Missing studentId'}), 400
+
+    recommendations = engine.recommend_content(
+        student_id  = data['studentId'],
+        subject     = data.get('subject',    'General'),
+        weak_topics = data.get('weakTopics', []),
+    )
+
+    state = engine.get_student_state(data['studentId'])
+    return jsonify({
+        'studentId':       data['studentId'],
+        'learningStyle':   state['learningStyle'],
+        'currentDifficulty': state['difficulty'],
+        'recommendations': recommendations,
+    })
+
+
+@app.route('/adaptive/state/<student_id>', methods=['GET'])
+def adaptive_state(student_id):
+    """GET — returns adaptive learning state for a student."""
+    return jsonify(engine.get_student_state(student_id))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    # Run service on port 5001 internally
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    print(f"""
+🤖 EduPulse ML Service
+   PORT: {port}
+   Endpoints: /mood/analyze, /cluster/run, /adaptive/*
+   Starting on http://localhost:{port}
+""")
+    app.run(host='0.0.0.0', port=port, debug=False)
