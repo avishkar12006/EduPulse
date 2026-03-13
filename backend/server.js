@@ -25,27 +25,17 @@ const app    = express();
 const server = http.createServer(app);
 
 // ── CORS ──────────────────────────────────────────────
-// In production set FRONTEND_URL=https://your-app.vercel.app
-// In dev it defaults to * so Vite proxy works
-const allowedOrigins = process.env.FRONTEND_URL
-  ? [process.env.FRONTEND_URL, 'http://localhost:5174', 'http://localhost:5173']
-  : ['*'];
-
-const corsOptions = {
-  origin: (origin, cb) => {
-    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) cb(null, true);
-    else cb(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-};
+// Auth uses JWT in Authorization header — no cookies, no credentials mode.
+// origin:'*' is safe and works reliably on all hosting platforms.
+app.use(cors({ origin: '*', methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'] }));
 
 // ── Socket.io ─────────────────────────────────────────
-const io = new Server(server, { cors: { origin: allowedOrigins.includes('*') ? '*' : allowedOrigins, methods: ['GET','POST'] } });
+const io = new Server(server, { cors: { origin: '*', methods: ['GET','POST'] } });
 
 // ── Middlewares ───────────────────────────────────────
-app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
 
 // ── Health ────────────────────────────────────────────
 app.get('/health', (req, res) =>
