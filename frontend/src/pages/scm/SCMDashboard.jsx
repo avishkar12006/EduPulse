@@ -183,6 +183,8 @@ function ClusterCard({ student, onClick }) {
   );
 }
 
+const API_BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api';
+
 export default function SCMDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -235,7 +237,7 @@ export default function SCMDashboard() {
       await new Promise(r => setTimeout(r, 900));
     }
     try {
-      const res = await fetch('/api/cluster/run', { method:'POST', headers:{'Content-Type':'application/json'} });
+      const res = await fetch(`${API_BASE}/cluster/run`, { method:'POST', headers:{'Content-Type':'application/json'} });
       const data = await res.json();
       setKMeansResult(data);
       const sent = data.alertsSent?.length || 0;
@@ -305,7 +307,7 @@ export default function SCMDashboard() {
     setAlertSending(student._id);
     try {
       const parentEmail = 'kapadnisvijay331@gmail.com';
-      const res = await fetch('/api/alerts/demo-alert', {
+      const res = await fetch(`${API_BASE}/alerts/demo-alert`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentName: student.name, parentEmail, parentName: 'Parent/Guardian',
           reason: student.reasons?.[0] || `${student.name} requires academic intervention.`,
