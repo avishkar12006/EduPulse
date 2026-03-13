@@ -151,40 +151,42 @@ router.post('/login', async (req, res) => {
           user = null;
         }
         if (!user) {
-          user = await User.create({
-            name: demoName,
-            email: email.toLowerCase(),
-            password,
-            role: demoRole,
-            avatar: demoAvatars[demoRole] || '⚡',
-            language: 'en',
-            isActive: true,
-          });
-          if (demoRole === 'school_student' || demoRole === 'college_student') {
-            const rollNumber = `DEMO${Date.now().toString().slice(-4)}`;
-            const studentData = await Student.create({
-              userId: user._id,
-              name: user.name,
-              rollNumber,
-              institution: 'EduPulse Demo Institution',
-              class: demoClass || 'college',
-              semester: 1,
-              section: 'A',
-              academicHealthScore: demoHealth || 65,
-              attendancePercentage: demoAttend || 75,
-              cluster: demoCluster || 'medium',
-              streakDays: 3,
-              xpPoints: 150,
-              level: 2,
+          try {
+            user = await User.create({
+              name: demoName,
+              email: email.toLowerCase(),
+              password,
+              role: demoRole,
+              avatar: demoAvatars[demoRole] || '⚡',
+              language: 'en',
+              isActive: true,
             });
-            user.studentId = studentData._id;
-            await user.save();
+            if (demoRole === 'school_student' || demoRole === 'college_student') {
+              const rollNumber = `DEMO${Date.now().toString().slice(-4)}${Math.floor(Math.random()*100)}`;
+              const studentData = await Student.create({
+                userId: user._id,
+                name: user.name,
+                rollNumber,
+                institution: 'EduPulse Demo Institution',
+                class: demoClass || 'college',
+                semester: 1,
+                section: 'A',
+                academicHealthScore: demoHealth || 65,
+                attendancePercentage: demoAttend || 75,
+                cluster: demoCluster || 'medium',
+                streakDays: 3,
+                xpPoints: 150,
+                level: 2,
+              });
+              user.studentId = studentData._id;
+              await user.save();
+            }
+          } catch (demoErr) {
+            console.error('Demo Creation Error:', demoErr);
           }
         }
       }
       // ── END DEMO BYPASS ──────────────────────────────────────────────────
-
-
 
       // Use same error for wrong email AND wrong password (prevent user enumeration)
       if (!user) return res.status(401).json({ message: 'Invalid email or password' });
