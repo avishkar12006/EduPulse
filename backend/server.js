@@ -19,7 +19,7 @@ const schoolRoutes  = require('./routes/school');
 
 connectDB();
 
-const path = require('path');
+
 
 const app    = express();
 const server = http.createServer(app);
@@ -63,18 +63,6 @@ app.use('/api/career',     careerRoutes);
 app.use('/api/ai',         aiRoutes);
 app.use('/api/cluster',    clusterRoutes);
 app.use('/api/school',     schoolRoutes);
-
-// ── Serve React frontend in production ────────────────
-// When deployed on Render as a single service:
-// 1. Run `npm run build` in /frontend → creates /frontend/dist
-// 2. Backend serves those static files for all non-API routes
-if (process.env.NODE_ENV === 'production') {
-  const distPath = path.join(__dirname, '../frontend/dist');
-  app.use(express.static(distPath));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
-}
 
 // ── Socket.io events ──────────────────────────────────
 io.on('connection', socket => {
